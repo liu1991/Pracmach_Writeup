@@ -1,0 +1,120 @@
+## **Course Project: M-L based Exercise Manner Prediction**
+#### *Terence LIU, 2015/9*
+
+<br/>
+
+### **Background**
+
+This is a course project of **Practical Machine Learning** in the **Data Science Specialization**. The main work of this report is to apply two useful machine learning (M-L) tecniques including **Classification trees** and **Boosting with trees** to the prediction of excecise manner. More background information is available from < http://groupware.les.inf.puc-rio.br/har>.
+
+### **Data Loading & cleaning**
+
+We set the working dicrectory, load essential packages and training and testing data. Note that all predict varibles are set to be numerical type.
+
+```{r,warning=FALSE}
+library(caret)
+library(ggplot2)
+library(gridExtra)
+train_dat <- read.csv("pml-training.csv",header=T)
+vali_dat <- read.csv("pml-testing.csv",header=T)
+train_dat <- train_dat[,-1] #the 1st colume X is obviously not regarded as predictor.
+vali_dat <- vali_dat[,-1]
+for (i in 1:(dim(train_dat)[2]-1)) { train_dat[,i] <- as.numeric(train_dat[,i])}
+for (i in 1:(dim(vali_dat)[2]-1)) { vali_dat[,i] <- as.numeric(vali_dat[,i])}
+```
+
+We further filter out the train_dat varibles containing of NA to obtain more efficient and reasonable models. After that, the number of variables is reduced to 92.
+
+```{r}
+ind <- NULL
+for (i in 1:(dim(train_dat)[2])) {
+ind[i] <- all(!is.na(train_dat[,i]))
+}
+train_dat <- train_dat[,ind]
+vali_dat <- vali_dat[,ind]
+dim(train_dat)[2]
+```
+
+Then we filter out the varibles nearly without variance which cab barely explain the model. After that, the number of variables is reduced to 58.
+
+
+```{r}
+ind2 <- nearZeroVar(train_dat[,-dim(train_dat)[2]])
+train_dat <- train_dat[,-ind2]
+vali_dat <- vali_dat[,-ind2]
+dim(train_dat)[2]
+```
+
+
+### **Model Construction & Prediction**
+
+#### PCA Preprocessing
+
+The clean dataset has been splitted in a 60% training and 40% testing subset.
+
+```{r}
+inTrain <- createDataPartition(y=train_dat$class,p=0.6,list=F)
+training <- train_dat[inTrain,]
+testing <- train_dat[-inTrain,]
+```
+
+Then the PCA is employed to trainsform the data to another space where the variables are uncorrelated with the others. 
+
+```{r}
+preProc <- preProcess(training[,-58],method=c("BoxCox","center","scale","pca"),thresh=0.8)
+trainPC <- predict(preProc,training[,-58])
+preProc
+```
+
+The PCA need 13 PCs to caupture the desired variance. 
+
+To find some interesting patterns in classifying outcomes by those PCs. Here we illustrate them by x-y scatterplots with pairs of some PCs.
+
+```{r}
+a=ggplot(trainPC,aes(PC1,PC2,color=training$class))+geom_point()
+b=ggplot(trainPC,aes(PC1,PC3,color=training$class))+geom_point()
+c=ggplot(trainPC,aes(PC1,PC4,color=training$class))+geom_point()
+d=ggplot(trainPC,aes(PC1,PC5,color=training$class))+geom_point()
+grid.arrange(a,b,c,d,ncol=2)
+```
+
+
+#### RM (Random Forest) Algorithm Training & Testing
+
+In this session, we employ the **Random Forest**, a most commonly used and powerful algorithm. The model has been resampled with **10-fold cross-validation**.
+
+```{r,warning=FALSE,message=FALSE}
+if (file.exists("modelRF.rda")) {
+  load(file="modelRF.rda")
+} else {
+  train_cont <- trainControl(method="cv",number=10)
+  modelFit <- train(training$class~.,method="rf",data=trainPC,trControl=train_cont,prox=T)
+  save(modelFit,file="modelRF.rda")
+}
+modelFit
+pred <- predict(modelFit,trainPC)
+confusionMatrix(pred,training$classe)
+```
+
+Then we test the model with the testing subdateset.
+
+```{r}
+testPC <- predict(preProc,testing[,-58])
+pred <- predict(modelFit,testPC)
+confusionMatrix(testing$classe,pred)
+```
+
+We can see the **out-of-sample accuracy** is close to 1, indicating a good performance RF model has been constructed.
+
+### **Exercise Manner Prediction by RF**
+
+Finaly, we perform the constructed RF model on the clean vali_dat dataset and obtain the results. 
+
+```{r,warning=FALSE}
+validPC <- predict(preProc,vali_dat[,-58])
+res <- predict(modelFit,validPC)
+res
+```
+
+
+
